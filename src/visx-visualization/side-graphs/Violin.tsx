@@ -1,16 +1,22 @@
 import React, { useMemo } from "react";
 
+import { useTheme } from "@mui/material/styles";
 import { Group } from "@visx/group";
 import { scaleLinear } from "@visx/scale";
 import { area } from "@visx/shape";
-import { curveBumpY, max, rollup } from "d3";
-import { CountsMatrixValue } from "../../cellpop-schema";
-import { useColumns, useRows } from "../../contexts/AxisOrderContext";
-import { useCellPopTheme } from "../../contexts/CellPopThemeContext";
-import { useData } from "../../contexts/DataContext";
+import { bin, max, rollups } from "d3";
+import { useData, useMaxCount } from "../../contexts/DataContext";
 import { usePanelDimensions } from "../../contexts/DimensionsContext";
+import { useSelectedValues } from "../../contexts/ExpandedValuesContext";
 import { useXScale, useYScale } from "../../contexts/ScaleContext";
-import { epanechnikov, kde } from "../../utils/violin";
+import { useSetTooltipData } from "../../contexts/TooltipDataContext";
+import { BackgroundStripe } from "./BackgroundStripe";
+import {
+  LEFT_MARGIN,
+  LEFT_MULTIPLIER,
+  TOP_MARGIN,
+  TOP_MULTIPLIER,
+} from "./constants";
 
 type Side = "top" | "left";
 
@@ -20,12 +26,52 @@ interface ViolinsProps {
 
 // X scale is categorical for the top graph, Y scale is categorical for the left graph
 function useCategoricalScale(side: Side) {
-  const { scale: heatmapXScale } = useXScale();
-  const { scale: heatmapYScale } = useYScale();
-  if (side === "top") {
-    return heatmapXScale;
+  const x = useXScale();
+  const y = useYScale();
+  switch (side) {
+    case "top":
+      return x;
+    case "left":
+      return y;
+    default:
+      console.log("Invalid side in Violin.useCategoricalScale: ", side);
+      return x;
   }
-  return heatmapYScale;
+}
+
+function getMultiplier(side: Side) {
+  switch (side) {
+    case "top":
+      return TOP_MULTIPLIER;
+    case "left":
+      return LEFT_MULTIPLIER;
+    default:
+      console.log("Invalid side in Violin.getMultiplier: ", side);
+      return 1;
+  }
+}
+
+function useViolinScale(side: Side) {
+  const topViolins = side === "top";
+  const { width, height } = usePanelDimensions(
+    topViolins ? "center_top" : "left_middle",
+  );
+  const { tickLabelSize } = useCategoricalScale(side);
+
+  const upperBound = useMaxCount();
+  /**
+   * Scale used to generate the density of the violin plots.
+   */
+  const rangeStart = topViolins ? height : width;
+  const multiplier = getMultiplier(side);
+  const rangeEnd = tickLabelSize * multiplier;
+
+  const violinScale = scaleLinear({
+    range: [rangeStart, rangeEnd],
+    domain: [0, upperBound],
+  });
+
+  return violinScale;
 }
 
 /**
@@ -34,110 +80,136 @@ function useCategoricalScale(side: Side) {
  * @returns
  */
 export default function Violins({ side = "top" }: ViolinsProps) {
-  const horizontal = side === "top";
+  const topViolins = side === "top";
   const {
-    data: { countsMatrixFractions },
-    upperBound,
+    data: { countsMatrix },
   } = useData();
+  const upperBound = useMaxCount();
 
-  const [rows] = useRows();
-  const [columns] = useColumns();
-
-  const countsMatrix = horizontal
-    ? countsMatrixFractions.col
-    : countsMatrixFractions.row;
-
-  const dimensions = usePanelDimensions(
+  const { width, height } = usePanelDimensions(
     side === "top" ? "center_top" : "left_middle",
   );
-  const { width, height } = dimensions;
-  const categoricalScale = useCategoricalScale(side);
-  const groups = horizontal ? columns : rows;
+  const { scale: categoricalScale, tickLabelSize } = useCategoricalScale(side);
 
   /**
    * Scale used to generate the density of the violin plots.
    */
-  const violinScale = scaleLinear({
-    range: [horizontal ? height : width, 0],
-    domain: [0, upperBound],
-  });
+  const rangeStart = topViolins ? height : width;
+  const multiplier = topViolins ? TOP_MULTIPLIER : LEFT_MULTIPLIER;
+  const rangeEnd = tickLabelSize * multiplier;
+
+  const violinScale = useViolinScale(side);
 
   // Creates a map of group name to violin data
   const violins = useMemo(() => {
-    const bandwidth = 0.1;
-    const thresholds = violinScale.ticks(100);
-    const density = kde(epanechnikov(bandwidth), thresholds);
-    return rollup<CountsMatrixValue, [number, number][], string[]>(
+    const bins = bin()
+      .thresholds(50)
+      .domain([0, upperBound])
+      .value((d) => d);
+    const violinData = rollups(
       countsMatrix,
       (v) => {
-        return density(v.map((g) => g.value));
+        const values = v.map((d) => d.value).filter((v) => v > 0);
+        const bin = bins(values);
+        const binLengths = bin.map((b) => b.length);
+        return binLengths;
       },
-      (d) => (horizontal ? d.col : d.row),
+      (d) => (topViolins ? d.col : d.row),
     );
-  }, [countsMatrix, horizontal, violinScale]);
+    return violinData;
+  }, [side, countsMatrix, topViolins, violinScale, upperBound]);
 
-  const allNums = useMemo(() => {
-    const violinValues = [...violins.values()];
-    const allNum = violinValues.reduce((allNum, d) => {
-      /* @ts-expect-error The d3 type annotations for `rollup` don't seem to be correct */
-      allNum.push(...d.map((d) => d[1]));
-      return allNum;
-    }, [] as number[]);
-    return allNum;
+  const maxBinCount = useMemo(() => {
+    return violins.reduce((acc, [, violinData]) => {
+      const maxBin = max(violinData);
+      return maxBin > acc ? maxBin : acc;
+    }, 0);
   }, [violins]);
 
-  const categoricalScaleRescaled = categoricalScale.copy().paddingInner(0.25);
-
-  const maxNum = max(allNums) || 0;
   const densityScale = scaleLinear({
-    domain: [-maxNum, maxNum],
-    range: [0, categoricalScaleRescaled.bandwidth()],
+    domain: [-maxBinCount, maxBinCount],
+    range: [0, categoricalScale.bandwidth()],
   });
 
   const violinAreaGenerator = useMemo(() => {
-    return area<[number, number]>({
-      ...(horizontal
-        ? ({
-            // top
-            x0: (d) => densityScale(-d[1]),
-            x1: (d) => densityScale(d[1]),
-            y: (d) => violinScale(d[0]),
-          } as const)
-        : ({
-            // left
-            y0: (d) => densityScale(-d[1]),
-            y1: (d) => densityScale(d[1]),
-            x: (d) => violinScale(d[0]),
-          } as const)),
-      curve: curveBumpY,
-    });
-  }, [densityScale, violinScale, horizontal]);
+    if (topViolins) {
+      return area<[number, number]>()
+        .y((d) => violinScale(d[0]))
+        .x0((d) => densityScale(-d[1]))
+        .x1((d) => densityScale(d[1]));
+    } else {
+      return area<[number, number]>()
+        .x((d) => violinScale(d[0]))
+        .y0((d) => densityScale(-d[1]))
+        .y1((d) => densityScale(d[1]));
+    }
+  }, [densityScale, violinScale, topViolins]);
 
-  const { theme } = useCellPopTheme();
+  const theme = useTheme();
+
+  const { openTooltip } = useSetTooltipData();
+
+  const selectedValues = useSelectedValues((s) => s.selectedValues);
 
   return (
     <>
-      {groups.map((group) => {
-        // @ts-expect-error The d3 type annotations for `rollup` don't seem to be correct
-        const violinData = violins.get(group);
-        if (!violinData) {
+      {violins.map(([group, violinData]) => {
+        if (selectedValues.size > 0 && selectedValues.has(group)) {
           return null;
         }
         // Position of violin corresponds to its row/column;
-        // bandwidth is used to center its position
-        const transformCoordinate =
-          categoricalScaleRescaled(group) - categoricalScale.bandwidth() / 2;
-        const transform = horizontal
+        const transformCoordinate = categoricalScale(group);
+        const transform = topViolins
           ? `translate(${transformCoordinate}, 0)`
           : `translate(0, ${transformCoordinate})`;
+        const binsWithThresholds: [number, number][] = violinData.map(
+          (d, idx) => [idx * 200, d],
+        );
+        const tooltip = binsWithThresholds.reduce((acc, [threshold, count]) => {
+          if (count == 0) {
+            return acc;
+          }
+          return {
+            ...acc,
+            [`${threshold}-${threshold + 199}`]: `${count} ${count === 1 ? "entry" : "entries"}`,
+          };
+        }, {});
+
+        const backgroundY = topViolins ? rangeEnd : 0;
+        const backgroundX = topViolins ? 0 : rangeEnd;
+
+        const backgroundWidth = topViolins
+          ? categoricalScale.bandwidth()
+          : rangeStart + LEFT_MARGIN;
+
+        const backgroundHeight = topViolins
+          ? rangeStart + TOP_MARGIN
+          : categoricalScale.bandwidth();
         return (
           <Group key={group} transform={transform}>
+            <BackgroundStripe
+              onMouseOver={(e) => {
+                openTooltip(
+                  {
+                    title: group,
+                    data: tooltip,
+                  },
+                  e.clientX,
+                  e.clientY,
+                );
+              }}
+              x={backgroundX}
+              y={backgroundY}
+              height={backgroundHeight}
+              width={backgroundWidth}
+              value={group}
+              orientation={topViolins ? "vertical" : "horizontal"}
+            />
             <path
               key={group}
-              d={violinAreaGenerator(violinData)}
+              d={violinAreaGenerator(binsWithThresholds)}
               opacity={1}
-              stroke={theme.sideCharts}
-              fill={theme.sideCharts}
+              fill={theme.palette.text.primary}
               fillOpacity={0.6}
               strokeWidth={1}
             />

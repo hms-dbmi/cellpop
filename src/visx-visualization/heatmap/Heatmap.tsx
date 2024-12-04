@@ -1,10 +1,16 @@
 import { scaleLinear } from "@visx/scale";
-import React, { useMemo } from "react";
+import React from "react";
 
-import { useColumns, useRows } from "../../contexts/AxisOrderContext";
-import { useCellPopTheme } from "../../contexts/CellPopThemeContext";
-import { useData } from "../../contexts/DataContext";
+import { useTheme } from "@mui/material/styles";
+import {
+  useColumns,
+  useData,
+  useDataMap,
+  useRowMaxes,
+  useRows,
+} from "../../contexts/DataContext";
 import { useHeatmapDimensions } from "../../contexts/DimensionsContext";
+import { useSelectedValues } from "../../contexts/ExpandedValuesContext";
 import {
   useColorScale,
   useXScale,
@@ -17,16 +23,17 @@ import DragOverlayContainer from "./DragOverlay";
 function HeatmapRow({ row }: { row: string }) {
   const { width } = useHeatmapDimensions();
   const { scale: xScale } = useXScale();
-  const { scale: yScale, selectedValues } = useYScale();
+  const { scale: yScale } = useYScale();
+  const selectedValues = useSelectedValues((s) => s.selectedValues);
   const { scale: colors } = useColorScale();
   const cellWidth = Math.ceil(xScale.bandwidth());
-  // @ts-expect-error - custom y scale provides the appropriate band width for the given row
-  // and providing an arg to a regular scale's bandwidth function doesn't throw, so this is fine
   const cellHeight = Math.ceil(yScale.bandwidth(row));
-  const { removedRows, removedColumns, rowMaxes, dataMap } = useData();
-  const [columns] = useColumns();
+  const { removedRows, removedColumns } = useData();
+  const dataMap = useDataMap();
+  const rowMaxes = useRowMaxes();
+  const columns = useColumns();
 
-  const { theme } = useCellPopTheme();
+  const theme = useTheme();
   if (removedRows.has(row)) {
     return null;
   }
@@ -47,7 +54,7 @@ function HeatmapRow({ row }: { row: string }) {
           y={yScale(row)}
           width={width}
           height={cellHeight}
-          fill="white"
+          fill={theme.palette.background.default}
         />
         {rowKeys.map((key) => {
           const [row, col] = key.split("-");
@@ -66,15 +73,15 @@ function HeatmapRow({ row }: { row: string }) {
                 y={yBackground}
                 width={cellWidth}
                 height={cellHeight}
-                fill={"white"}
+                fill={theme.palette.background.default}
               />
               <rect
                 x={x}
                 y={yBar}
                 width={cellWidth}
                 height={barHeight}
-                fill={"black"}
-                stroke="white"
+                fill={theme.palette.text.primary}
+                stroke={theme.palette.background.default}
               />
             </g>
           );
@@ -85,7 +92,7 @@ function HeatmapRow({ row }: { row: string }) {
           x2={width}
           y1={yScale(row) + cellHeight}
           y2={yScale(row) + cellHeight}
-          stroke="black"
+          stroke={theme.palette.text.primary}
         />
       </g>
     );
@@ -106,7 +113,7 @@ function HeatmapRow({ row }: { row: string }) {
             width={Math.ceil(cellWidth)}
             height={Math.ceil(cellHeight)}
             fill={colors(value)}
-            stroke={theme.text}
+            stroke={theme.palette.text.primary}
             strokeOpacity={0.5}
           />
         );
@@ -118,33 +125,36 @@ function HeatmapRow({ row }: { row: string }) {
 export default function Heatmap() {
   const { width, height } = useHeatmapDimensions();
   const { selectedDimension } = useSelectedDimension();
-  const [rows, { setOrderedValues: setRows, setSortOrder: setRowOrder }] =
-    useRows();
-  const [
-    columns,
-    { setOrderedValues: setColumns, setSortOrder: setColumnOrder },
-  ] = useColumns();
+  const rows = useRows();
+  const columns = useColumns();
+
+  const items = selectedDimension === "X" ? columns : rows;
+
+  const { setItems, resetSort } = useData((store) => ({
+    setItems:
+      selectedDimension === "X" ? store.setColumnOrder : store.setRowOrder,
+    resetSort:
+      selectedDimension === "X"
+        ? store.clearColumnSortOrder
+        : store.clearRowSortOrder,
+  }));
 
   const { closeTooltip } = useSetTooltipData();
 
-  // Dynamically determine which dimension to use based on the selected dimension
-  const { items, setItems, setSort } = useMemo(() => {
-    const items = selectedDimension === "X" ? columns : rows;
-    const setItems = selectedDimension === "X" ? setColumns : setRows;
-    const setSort = selectedDimension === "X" ? setColumnOrder : setRowOrder;
-    return { items, setItems, setSort };
-  }, [selectedDimension, columns, rows]);
-
-  const { theme } = useCellPopTheme();
+  const theme = useTheme();
 
   return (
-    <DragOverlayContainer items={items} setItems={setItems} setSort={setSort}>
+    <DragOverlayContainer
+      items={items}
+      setItems={setItems}
+      resetSort={resetSort}
+    >
       <svg
         width={width}
         height={height}
         className="heatmap"
         style={{
-          outline: `1px solid ${theme.text}`,
+          outline: `1px solid ${theme.palette.text.primary}`,
         }}
         onMouseOut={closeTooltip}
       >

@@ -1,45 +1,45 @@
 import React from "react";
 
+import { useTheme } from "@mui/material/styles";
 import { AxisRight } from "@visx/axis";
 import { formatPrefix, max } from "d3";
 import { useColumnConfig } from "../../contexts/AxisConfigContext";
-import { useCellPopTheme } from "../../contexts/CellPopThemeContext";
-import { useData } from "../../contexts/DataContext";
+import { useColumnCounts, useMaxCount } from "../../contexts/DataContext";
 import { usePanelDimensions } from "../../contexts/DimensionsContext";
 import { useFraction } from "../../contexts/FractionContext";
 import { useXScale } from "../../contexts/ScaleContext";
 import HeatmapXAxis from "../heatmap/HeatmapXAxis";
 import Bars from "./Bars";
 import Violins from "./Violin";
-import { TOP_MARGIN } from "./constants";
+import { TOP_MULTIPLIER } from "./constants";
 import { useCountsScale } from "./hooks";
 
-const useYAxisCountsScale = () => {
+const useColumnCountsScale = () => {
   const { height } = usePanelDimensions("center_top");
-  const { columnCounts } = useData();
+  const columnCounts = useColumnCounts();
+  const upperBound = useMaxCount();
   const { tickLabelSize } = useXScale();
+  const fraction = useFraction((s) => s.fraction);
+  const domainMax = fraction ? upperBound : max(Object.values(columnCounts));
   return useCountsScale(
-    [max(Object.values(columnCounts)) || 0, 0],
-    [height - TOP_MARGIN - tickLabelSize, 0],
+    [domainMax, 0],
+    [height - tickLabelSize * TOP_MULTIPLIER, 0],
   );
 };
 
 function TopBar() {
   const { height } = usePanelDimensions("center_top");
-  const { columnCounts } = useData();
   // Use same x scale as the heatmap
-  const { scale: xScale, selectedValues, nonExpandedSize } = useXScale();
-  const yScale = useYAxisCountsScale();
+  const { scale: xScale, nonExpandedSize } = useXScale();
+  const yScale = useColumnCountsScale();
 
   return (
-    <g className="bartop">
+    <g className="bar-graph-top">
       <Bars
         orientation="vertical"
         categoricalScale={xScale}
         numericalScale={yScale}
-        data={columnCounts}
         domainLimit={height}
-        selectedValues={selectedValues}
         nonExpandedSize={nonExpandedSize}
       />
     </g>
@@ -49,31 +49,31 @@ function TopBar() {
 export function TopGraphScale() {
   const { width, height } = usePanelDimensions("right_top");
   // Use same x scale as the heatmap
-  const yScale = useYAxisCountsScale();
+  const yScale = useColumnCountsScale();
   const { tickLabelSize } = useXScale();
 
-  const axisScale = yScale.copy().range([tickLabelSize, height - TOP_MARGIN]);
+  const axisScale = yScale.copy().range([tickLabelSize * 1.5, height]);
 
-  const axisTotalHeight = height - TOP_MARGIN - tickLabelSize;
+  const axisTotalHeight = height - tickLabelSize * TOP_MULTIPLIER;
 
-  const { theme } = useCellPopTheme();
+  const theme = useTheme();
 
   return (
     <svg
       width={width}
       height={height}
-      style={{ borderLeft: `1px solid ${theme.sideCharts}` }}
+      style={{ borderLeft: `1px solid ${theme.palette.text.primary}` }}
     >
       <AxisRight
         scale={axisScale}
-        top={16}
+        top={0}
         left={0}
         orientation="right"
         hideZero
         hideAxisLine
-        stroke={theme.text}
-        tickLabelProps={{ fill: theme.text, className: "text" }}
-        tickStroke={theme.text}
+        stroke={theme.palette.text.primary}
+        tickLabelProps={{ fill: theme.palette.text.primary, className: "text" }}
+        tickStroke={theme.palette.text.primary}
         tickFormat={(t) => formatPrefix(".0k", t as number)(t)}
         tickValues={axisTotalHeight > 100 ? undefined : [yScale.domain()[0]]}
       />
@@ -91,7 +91,7 @@ function TopViolin() {
 export default function TopGraph() {
   const { width, height } = usePanelDimensions("center_top");
 
-  const { flipAxisPosition } = useColumnConfig();
+  const flipAxisPosition = useColumnConfig((store) => store.flipAxisPosition);
 
   const { fraction } = useFraction();
   return (
