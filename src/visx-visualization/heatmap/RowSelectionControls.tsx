@@ -1,11 +1,14 @@
 import { Tooltip } from "@mui/material";
 import React from "react";
-import { useRows } from "../../contexts/AxisOrderContext";
+import { useRows } from "../../contexts/DataContext";
+import { useSelectedValues } from "../../contexts/ExpandedValuesContext";
 import { useYScale } from "../../contexts/ScaleContext";
 
 export default function RowSelectionControls() {
-  const [rows] = useRows();
-  const { selectedValues, toggleSelection, scale } = useYScale();
+  const rows = useRows();
+  const { scale } = useYScale();
+  const selectedValues = useSelectedValues((s) => s.selectedValues);
+  const toggleSelection = useSelectedValues((s) => s.toggleValue);
   return (
     <>
       {rows.map((row) => (

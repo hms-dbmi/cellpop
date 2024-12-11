@@ -1,74 +1,53 @@
 import React, { useId } from "react";
-import { useCellPopTheme } from "../contexts/CellPopThemeContext";
-import { usePanelDimensions } from "../contexts/DimensionsContext";
-import {
-  HEATMAP_THEMES,
-  HeatmapTheme,
-  useColorScale,
-} from "../contexts/ScaleContext";
+import { useColorScale } from "../contexts/ScaleContext";
+
+import { Box, Stack, Typography } from "@mui/material";
+import InputLabel from "@mui/material/InputLabel";
+
+import { PlotControlsButton } from "./plot-controls.tsx/PlotControls";
+import { TemporalControls } from "./TemporalControls";
 
 export default function Legend() {
-  const {
-    scale: colors,
-    maxValue,
-    setHeatmapTheme,
-    heatmapTheme,
-  } = useColorScale();
-  const { width } = usePanelDimensions("left_top");
-  const { theme } = useCellPopTheme();
+  const { scale: colors, maxValue } = useColorScale();
   const id = useId() + "-legend";
 
-  const adjustedWidth = width - 40; // 20px padding on each side
+  const minColor = colors(0);
+  const maxColor = colors(maxValue);
+
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        flexDirection: "column",
-        justifyContent: "center",
-        height: "100%",
-        gap: "1rem",
-      }}
-    >
-      <label htmlFor={id} style={{ color: theme.text }} className="text">
-        Counts
-      </label>
-      <div style={{ height: "1.5rem" }}>
-        <div
-          style={{
-            width: adjustedWidth,
+    <Stack height="100%" gap="1rem" paddingX={1}>
+      <Stack width="100%">
+        <InputLabel id="heatmap-legend-select-label">Counts</InputLabel>
+        <Box
+          id={id}
+          sx={{
+            w: "100%",
             display: "flex",
-            justifyContent: "space-between",
-            background: `linear-gradient(to right, ${colors(0)}, ${colors(maxValue)})`,
-            padding: ".25rem",
-            borderRadius: ".25rem",
-            outline: `1px solid ${theme.text}`,
+            flexGrow: 1,
+            background: `linear-gradient(to right, ${minColor}, ${maxColor})`,
+            borderRadius: 4,
           }}
         >
-          <div style={{ color: colors(maxValue) }}>0</div>
-          <div style={{ color: colors(0) }}>{maxValue} </div>
-        </div>
-      </div>
-      <div>
-        <label
-          htmlFor={"heatmap-theme-select"}
-          style={{ color: theme.text }}
-          className="text"
-        >
-          Theme:
-        </label>
-        <select
-          id={"heatmap-theme-select"}
-          value={heatmapTheme}
-          onChange={(e) => setHeatmapTheme(e.target.value as HeatmapTheme)}
-        >
-          {HEATMAP_THEMES.map((theme) => (
-            <option key={theme} value={theme}>
-              {theme}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
+          <Stack
+            justifyContent="space-between"
+            direction={"row"}
+            width="100%"
+            px={2}
+            py={0.75}
+          >
+            <Typography variant="body2" style={{ color: maxColor }}>
+              0
+            </Typography>
+            <Typography variant="body2" style={{ color: minColor }}>
+              {maxValue}
+            </Typography>
+          </Stack>
+        </Box>
+      </Stack>
+      <Stack direction="row" gap={2} flexWrap="wrap">
+        <PlotControlsButton />
+        <TemporalControls />
+      </Stack>
+    </Stack>
   );
 }
