@@ -1,16 +1,10 @@
 import { AnnDataSource, ObsSetsAnndataLoader } from "@vitessce/zarr";
 import { HuBMAPSearchHit, ObsSets, dataOrdering } from "../cellpop-schema";
-import { getCountsFromObsSetsList } from "./dataLoaders";
+import { getCountsAndMetadataFromObsSetsList } from "./dataLoaders";
 import { loadDataWithCounts } from "./dataWrangling";
 
-export function loadHuBMAPData(
-  uuids: string[],
-  ordering?: dataOrdering,
-  metadataFields?: string[],
-) {
-  // let t0 = performance.now()
-  const urls = uuids.map(getHuBMAPURL);
-  // for each url, check if predicted_CLID or predicted_label
+export function loadHuBMAPData(uuids: string[], ordering?: dataOrdering) {
+  const urls = uuids.map(getHubmapURL);
 
   const obsSetsListPromises = getPromiseData(urls);
   const promiseData = Promise.all(obsSetsListPromises)
@@ -28,9 +22,10 @@ export function loadHuBMAPData(
         const obsSetsList = values[0];
         const hubmapIDs = values[1][0];
         const metadata = values[1][1];
-        const counts = getCountsFromObsSetsList(obsSetsList, hubmapIDs);
+        const { counts, metadata: datasetMetadata } =
+          getCountsAndMetadataFromObsSetsList(obsSetsList, hubmapIDs);
         const data = loadDataWithCounts(counts, undefined, ordering);
-        data.metadata = { rows: metadata };
+        data.metadata = { rows: metadata, cols: datasetMetadata };
         return data;
       }
     })
@@ -42,7 +37,7 @@ export function loadHuBMAPData(
 }
 
 // get hubmap url to zarr
-function getHuBMAPURL(uuid: string) {
+function getHubmapURL(uuid: string) {
   return `https://assets.hubmapconsortium.org/${uuid}/hubmap_ui/anndata-zarr/secondary_analysis.zarr`;
 }
 
@@ -58,8 +53,12 @@ function getPromiseData(urls: string[]) {
       options: {
         obsSets: [
           {
-            name: "Cell Ontology Annotation",
-            path: "obs/predicted_CLID", //"obs/predicted_label"
+            name: "Cell Ontology CLID",
+            path: "obs/predicted_CLID",
+          },
+          {
+            name: "Cell Ontology Label",
+            path: "obs/predicted_label",
           },
         ],
       },
@@ -107,7 +106,7 @@ function getPromiseMetadata(
             [ls.hubmap_id]: {
               title: ls.title,
               dataset_type: ls.dataset_type,
-              anatomy: ls.anatomy_2[0],
+              anatomy: ls?.anatomy_2?.[0] ?? ls?.anatomy_1?.[0],
               sex: dmm.sex[0],
               age: dmm.age_value[0],
             },
