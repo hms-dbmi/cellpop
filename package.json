@@ -4,12 +4,18 @@
   "version": "0.0.0",
   "homepage": "https://hms-dbmi.github.io/",
   "type": "module",
+  "main": "./dist/index.umd.js",
+  "module": "./dist/index.es.js",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.umd.js"
+    }
   },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build-demo": "vite build --mode demo",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
@@ -36,8 +42,9 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@emotion/react": "^11.13.3",
     "@emotion/styled": "^11.13.0",
-    "@mui/base": "5.0.0-beta.39",
-    "@mui/material": "^5.16.7",
+    "@mui/base": "5.0.0-beta.61",
+    "@mui/icons-material": "^6.1.7",
+    "@mui/material": "^6.1.7",
     "@radix-ui/react-context-menu": "^2.2.1",
     "@types/d3": "^7.4.3",
     "@types/react": "^18.3.10",
@@ -58,7 +65,10 @@
     "@vitessce/zarr": "^3.4.11",
     "d3": "^6.7.0",
     "d3-scale-chromatic": "^3.1.0",
+    "proxy-memoize": "^3.0.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zundo": "^2.3.0",
+    "zustand": "^5.0.1"
   }
 }
